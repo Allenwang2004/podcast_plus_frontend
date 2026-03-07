@@ -33,7 +33,8 @@ export function PodcastInterface() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false)
+  const pdfInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -318,22 +319,70 @@ export function PodcastInterface() {
     await sendToBackend({ type: "text", text })
   }
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files) return
-
-    for (const file of Array.from(files)) {
-      const text = await file.text()
-      setUploadedFiles((prev) => [...prev, { name: file.name, content: text }])
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
-  }
-
   const removeFile = (fileName: string) => {
     setUploadedFiles((prev) => prev.filter((f) => f.name !== fileName))
+  }
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>, autoProcess: boolean = true) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const file = files[0]
+    
+    // Validate PDF
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      alert('Please upload a PDF file')
+      return
+    }
+
+    setIsUploadingPdf(true)
+
+    try {
+      console.log('Uploading PDF:', file.name, 'Auto process:', autoProcess)
+      
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('auto_process', autoProcess.toString())
+
+      const response = await fetch('/api/upload-pdf', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to upload PDF')
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to upload PDF')
+      }
+
+      console.log('PDF upload response:', data)
+
+      // Show success message
+      const message = data.auto_processed 
+        ? `PDF "${data.filename}" uploaded and processed successfully!` 
+        : `PDF "${data.filename}" uploaded successfully!`
+      
+      alert(message)
+
+      // Add to uploaded files list for display
+      setUploadedFiles((prev) => [
+        ...prev,
+        { name: data.filename, content: `[PDF: ${data.filename}]` }
+      ])
+
+    } catch (error) {
+      console.error('PDF upload failed:', error)
+      alert(`Failed to upload PDF: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsUploadingPdf(false)
+      if (pdfInputRef.current) {
+        pdfInputRef.current.value = ''
+      }
+    }
   }
 
   return (
@@ -480,15 +529,24 @@ export function PodcastInterface() {
 
             <input
               type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".txt,.md,.json,.csv"
-              multiple
+              ref={pdfInputRef}
+              onChange={(e) => handlePdfUpload(e, true)}
+              accept=".pdf"
               className="hidden"
             />
-            <Button variant="outline" size="lg" onClick={() => fileInputRef.current?.click()} className="gap-2">
-              <Upload className="h-5 w-5" />
-              <span className="hidden sm:inline">Upload</span>
+            <Button 
+              variant="outline" 
+              size="lg" 
+              onClick={() => pdfInputRef.current?.click()} 
+              disabled={isUploadingPdf}
+              className="gap-2"
+            >
+              {isUploadingPdf ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Upload className="h-5 w-5" />
+              )}
+              <span className="hidden sm:inline">{isUploadingPdf ? "Uploading..." : "Upload"}</span>
             </Button>
 
             {isRecording && <span className="text-base text-destructive animate-pulse font-medium">Recording...</span>}
