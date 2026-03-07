@@ -14,6 +14,9 @@ interface Message {
   role: "user" | "assistant"
   content: string
   audioData?: string | null
+  audioUrl?: string | null
+  audioId?: string | null
+  isGeneratingAudio?: boolean
 }
 
 interface UploadedFile {
@@ -21,89 +24,20 @@ interface UploadedFile {
   content: string
 }
 
-const DEMO_TOPICS = [
-  { topic: "us-politics", userMessage: "Tell me about international news" },
-  { topic: "japan-news", userMessage: "What's happening in Japan?" },
-]
-
 export function PodcastInterface() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
   const [isRecording, setIsRecording] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isTranscribing, setIsTranscribing] = useState(false)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
-  const [demoIndex, setDemoIndex] = useState(0)
-  const [isInitialized, setIsInitialized] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioQueueRef = useRef<string[]>([])
-
-  useEffect(() => {
-    if (!isInitialized) {
-      setIsInitialized(true)
-      loadDemoResponse(0)
-    }
-  }, [isInitialized])
-
-  const loadDemoResponse = async (index: number) => {
-    if (index >= DEMO_TOPICS.length) return
-
-    const demo = DEMO_TOPICS[index]
-    setIsLoading(true)
-
-    // Add user message
-    const userMessage: Message = {
-      id: `demo-user-${index}`,
-      role: "user",
-      content: demo.userMessage,
-    }
-    setMessages((prev) => [...prev, userMessage])
-
-    try {
-      const formData = new FormData()
-      formData.append("inputType", "text")
-      formData.append("text", demo.userMessage)
-      formData.append("topic", demo.topic)
-      formData.append("context", "")
-      formData.append("messages", JSON.stringify([]))
-
-      const response = await fetch("/api/podcast", {
-        method: "POST",
-        body: formData,
-      })
-
-      if (!response.ok) throw new Error("API request failed")
-
-      const data = await response.json()
-
-      const assistantMessage: Message = {
-        id: `demo-assistant-${index}`,
-        role: "assistant",
-        content: data.aiResponse,
-        audioData: data.audioData,
-      }
-      setMessages((prev) => [...prev, assistantMessage])
-
-      if (data.audioData) {
-        playAudioWithCallback(data.audioData, assistantMessage.id, () => {
-          // After audio finishes, load next demo
-          const nextIndex = index + 1
-          setDemoIndex(nextIndex)
-          if (nextIndex < DEMO_TOPICS.length) {
-            setTimeout(() => loadDemoResponse(nextIndex), 1000)
-          }
-        })
-      }
-    } catch (error) {
-      console.error("Demo load failed:", error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
 
   const playAudioWithCallback = (audioData: string, messageId: string, onEnd?: () => void) => {
     if (audioRef.current) {
@@ -139,29 +73,34 @@ export function PodcastInterface() {
     setIsLoading(true)
 
     try {
-      const formData = new FormData()
-      formData.append("inputType", input.type)
-      formData.append("context", uploadedFiles.map((f) => f.content).join("\n\n"))
-      formData.append("messages", JSON.stringify(messages))
-
+      // For now, only support text input since backend doesn't handle audio
       if (input.type === "audio") {
-        formData.append("audio", input.audioBlob, "recording.webm")
-      } else {
-        formData.append("text", input.text)
+        console.error("Audio input not yet supported by backend")
+        return
       }
 
-      if (input.type === "text") {
-        const userMessage: Message = {
-          id: Date.now().toString(),
-          role: "user",
-          content: input.text,
-        }
-        setMessages((prev) => [...prev, userMessage])
+      // Add user message
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: input.text,
+      }
+      setMessages((prev) => [...prev, userMessage])
+
+      // Prepare request body
+      const requestBody = {
+        userInstruction: input.text,
+        retrievedContext: uploadedFiles.map((f) => f.content).join("\n\n"),
+        model: "gpt-4o-mini",
+        maxTokens: 1000,
       }
 
       const response = await fetch("/api/podcast", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
       })
 
       if (!response.ok) {
@@ -170,28 +109,32 @@ export function PodcastInterface() {
 
       const data = await response.json()
 
-      if (input.type === "audio") {
-        const userMessage: Message = {
-          id: Date.now().toString(),
-          role: "user",
-          content: data.userInput,
-        }
-        setMessages((prev) => [...prev, userMessage])
+      // Check if request was successful
+      if (!data.success) {
+        throw new Error(data.message || "Failed to generate dialogue")
       }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
-        content: data.aiResponse,
-        audioData: data.audioData,
+        content: data.dialogue,
+        audioData: null,
+        audioUrl: null,
+        audioId: data.audio_id,
+        isGeneratingAudio: false,
       }
       setMessages((prev) => [...prev, assistantMessage])
 
-      if (data.audioData) {
-        playAudioWithCallback(data.audioData, assistantMessage.id)
-      }
     } catch (error) {
       console.error("Request failed:", error)
+      // Show error message to user
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: `Error: ${error instanceof Error ? error.message : "Failed to generate response"}`,
+        audioData: null,
+      }
+      setMessages((prev) => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
     }
@@ -210,6 +153,133 @@ export function PodcastInterface() {
     }
   }
 
+  const generateAudio = async (messageId: string, dialogue: string, audioId: string) => {
+    try {
+      console.log("Generating audio for message:", messageId)
+      
+      // Update message to show generating state
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, isGeneratingAudio: true } : msg
+        )
+      )
+
+      const response = await fetch("/api/generate-audio", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          dialogue: dialogue,
+          audioId: audioId,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error("Failed to generate audio")
+      }
+
+      const data = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.message || "Failed to generate audio")
+      }
+
+      console.log("Audio generated:", data.audio_url)
+
+      // Update message with audio URL and auto-play
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, audioUrl: data.audio_url, isGeneratingAudio: false }
+            : msg
+        )
+      )
+
+      // Auto-play the audio
+      playAudioUrl(data.audio_url, messageId)
+
+    } catch (error) {
+      console.error("Failed to generate audio:", error)
+      // Reset generating state on error
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId ? { ...msg, isGeneratingAudio: false } : msg
+        )
+      )
+      alert(`Failed to generate audio: ${error instanceof Error ? error.message : "Unknown error"}`)
+    }
+  }
+
+  const playAudioUrl = (audioUrl: string, messageId: string) => {
+    if (audioRef.current) {
+      audioRef.current.pause()
+    }
+
+    const audio = new Audio(audioUrl)
+    audioRef.current = audio
+    setIsPlaying(true)
+    setCurrentPlayingId(messageId)
+
+    audio.onended = () => {
+      setIsPlaying(false)
+      setCurrentPlayingId(null)
+    }
+
+    audio.onerror = () => {
+      setIsPlaying(false)
+      setCurrentPlayingId(null)
+      console.error("Audio playback error")
+    }
+
+    audio.play().catch((err) => {
+      console.error("Audio play failed:", err)
+      setIsPlaying(false)
+      setCurrentPlayingId(null)
+    })
+  }
+
+  const transcribeAudio = async (audioBlob: Blob) => {
+    setIsTranscribing(true)
+    
+    try {
+      console.log("Starting transcription, audio blob size:", audioBlob.size)
+      
+      const formData = new FormData()
+      formData.append("audio", audioBlob, "recording.webm")
+
+      const response = await fetch("/api/stt", {
+        method: "POST",
+        body: formData,
+      })
+
+      console.log("STT response status:", response.status)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error("STT response error:", errorText)
+        throw new Error("STT request failed")
+      }
+
+      const data = await response.json()
+      console.log("STT response data:", data)
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to transcribe audio")
+      }
+
+      console.log("Setting input text to:", data.text)
+      // Set the transcribed text to input field
+      setInput(data.text)
+
+    } catch (error) {
+      console.error("Transcription failed:", error)
+      alert(`Transcription failed: ${error instanceof Error ? error.message : "Unknown error"}`)
+    } finally {
+      setIsTranscribing(false)
+    }
+  }
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -224,7 +294,7 @@ export function PodcastInterface() {
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" })
         stream.getTracks().forEach((track) => track.stop())
-        await sendToBackend({ type: "audio", audioBlob })
+        await transcribeAudio(audioBlob)
       }
 
       mediaRecorder.start()
@@ -293,7 +363,7 @@ export function PodcastInterface() {
       <div className="flex-1 overflow-y-auto space-y-5 mb-8">
         {messages.length === 0 && !isLoading && (
           <div className="flex items-center justify-center h-full text-muted-foreground">
-            <p className="text-lg">Loading demo content...</p>
+            <p className="text-lg">Start a conversation...</p>
           </div>
         )}
         {messages.map((message) => (
@@ -311,21 +381,62 @@ export function PodcastInterface() {
                 </p>
                 <p className="text-lg leading-relaxed whitespace-pre-wrap">{message.content}</p>
               </div>
-              {message.role === "assistant" && message.audioData && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() =>
-                    currentPlayingId === message.id ? stopAudio() : playAudio(message.audioData!, message.id)
-                  }
-                  className="shrink-0"
-                >
-                  {currentPlayingId === message.id && isPlaying ? (
-                    <Square className="h-5 w-5" />
-                  ) : (
-                    <Volume2 className="h-5 w-5" />
+              {message.role === "assistant" && (
+                <div className="flex gap-2 shrink-0">
+                  {/* Generate Audio Button */}
+                  {message.audioId && !message.audioUrl && !message.isGeneratingAudio && (
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => generateAudio(message.id, message.content, message.audioId!)}
+                      title="Generate audio"
+                    >
+                      <Volume2 className="h-5 w-5" />
+                    </Button>
                   )}
-                </Button>
+                  
+                  {/* Generating Audio Spinner */}
+                  {message.isGeneratingAudio && (
+                    <Button variant="outline" size="icon" disabled>
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    </Button>
+                  )}
+                  
+                  {/* Play/Stop Audio Button */}
+                  {message.audioUrl && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        currentPlayingId === message.id ? stopAudio() : playAudioUrl(message.audioUrl!, message.id)
+                      }
+                      title={currentPlayingId === message.id ? "Stop audio" : "Play audio"}
+                    >
+                      {currentPlayingId === message.id && isPlaying ? (
+                        <Square className="h-5 w-5" />
+                      ) : (
+                        <Volume2 className="h-5 w-5" />
+                      )}
+                    </Button>
+                  )}
+                  
+                  {/* Legacy audioData support */}
+                  {message.audioData && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() =>
+                        currentPlayingId === message.id ? stopAudio() : playAudio(message.audioData!, message.id)
+                      }
+                    >
+                      {currentPlayingId === message.id && isPlaying ? (
+                        <Square className="h-5 w-5" />
+                      ) : (
+                        <Volume2 className="h-5 w-5" />
+                      )}
+                    </Button>
+                  )}
+                </div>
               )}
             </div>
           </Card>
@@ -360,7 +471,7 @@ export function PodcastInterface() {
               variant={isRecording ? "destructive" : "outline"}
               size="lg"
               onClick={isRecording ? stopRecording : startRecording}
-              disabled={isLoading}
+              disabled={isLoading || isTranscribing}
               className="gap-2"
             >
               {isRecording ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
@@ -381,6 +492,7 @@ export function PodcastInterface() {
             </Button>
 
             {isRecording && <span className="text-base text-destructive animate-pulse font-medium">Recording...</span>}
+            {isTranscribing && <span className="text-base text-primary animate-pulse font-medium">Transcribing...</span>}
           </div>
 
           <Button size="lg" onClick={handleSubmit} disabled={!input.trim() || isLoading} className="px-6">
