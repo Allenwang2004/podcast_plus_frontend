@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     console.log("Sending to backend...")
     
     // Send to backend
-    const response = await fetch("http://localhost:8001/api/v1/rag/upload-pdf", {
+    const response = await fetch(`${process.env.backend_url}/api/v1/rag/upload-pdf`, {
       method: "POST",
       body: backendFormData,
     })

@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     console.log("Sending to backend:", JSON.stringify(backendRequestBody, null, 2))
     
     // Send POST request to backend
-    const response = await fetch("http://localhost:8001/api/v1/podcast/generate-audio", {
+    const response = await fetch(`${process.env.backend_url}/api/v1/podcast/generate-audio`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pp_frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      # Mount source code for hot reload
+      - ./app:/app/app
+      - ./components:/app/components
+      - ./lib:/app/lib
+      - ./hooks:/app/hooks
+      - ./public:/app/public
+      - ./styles:/app/styles
+      
+      # Mount config files
+      - ./package.json:/app/package.json
+      - ./pnpm-lock.yaml:/app/pnpm-lock.yaml
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./next.config.mjs:/app/next.config.mjs
+      - ./postcss.config.mjs:/app/postcss.config.mjs
+      - ./components.json:/app/components.json
+      
+      # Exclude node_modules and .next to avoid conflicts
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    env_file:
+      - .env
+    networks:
+      - podcast-network
+    restart: unless-stopped
+
+networks:
+  podcast-network:
+    driver: bridge
