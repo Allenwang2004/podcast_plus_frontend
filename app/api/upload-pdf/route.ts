@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     console.log("Backend URL:", backendUrl)
     
     // Send to backend
-    const response = await fetch(`${backendUrl}/api/v1/podcast/upload-pdf`, {
+    const response = await fetch(`${backendUrl}/api/v1/rag/upload-pdf`, {
       method: "POST",
       body: backendFormData,
     })
