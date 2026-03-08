@@ -8,12 +8,11 @@ export async function POST(request: NextRequest) {
     console.log("Request body:", JSON.stringify(body, null, 2))
     
     // Extract data
-    const { userInstruction, retrievedContext, model, maxTokens } = body
+    const { userInstruction, model, maxTokens } = body
     
     // Prepare request body for backend API
     const backendRequestBody = {
       user_instruction: userInstruction,
-      retrieved_context: retrievedContext || "",
       model: model || "gpt-4o-mini",
       max_tokens: maxTokens || 1000,
     }
