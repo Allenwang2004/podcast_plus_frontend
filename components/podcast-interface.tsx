@@ -188,7 +188,7 @@ export function PodcastInterface() {
 
       console.log("Audio generated:", data.audio_url)
 
-      // Update message with audio URL and auto-play
+      // Update message with audio URL (removed auto-play for mobile compatibility)
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId
@@ -196,9 +196,6 @@ export function PodcastInterface() {
             : msg
         )
       )
-
-      // Auto-play the audio
-      playAudioUrl(data.audio_url, messageId)
 
     } catch (error) {
       console.error("Failed to generate audio:", error)
