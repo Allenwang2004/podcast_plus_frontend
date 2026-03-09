@@ -6,7 +6,7 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
-import { Mic, MicOff, Send, Upload, FileText, X, Loader2, Volume2, Square } from "lucide-react"
+import { Mic, MicOff, Send, Upload, FileText, X, Loader2, Volume2, Square, Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Message {
@@ -210,31 +210,104 @@ export function PodcastInterface() {
   }
 
   const playAudioUrl = (audioUrl: string, messageId: string) => {
+    console.log("Attempting to play audio URL:", audioUrl)
+    
     if (audioRef.current) {
       audioRef.current.pause()
+      audioRef.current = null
     }
 
-    const audio = new Audio(audioUrl)
-    audioRef.current = audio
-    setIsPlaying(true)
-    setCurrentPlayingId(messageId)
-
-    audio.onended = () => {
+    try {
+      const audio = new Audio()
+      
+      // Add cache buster to prevent 304 errors
+      const cacheBuster = `t=${Date.now()}`
+      const urlWithCacheBuster = audioUrl.includes('?') 
+        ? `${audioUrl}&${cacheBuster}` 
+        : `${audioUrl}?${cacheBuster}`
+      
+      console.log("Audio URL with cache buster:", urlWithCacheBuster)
+      
+      // Set CORS mode for cross-origin audio
+      audio.crossOrigin = "anonymous"
+      
+      // Add load event listener
+      audio.addEventListener('loadedmetadata', () => {
+        console.log("Audio metadata loaded, duration:", audio.duration)
+      })
+      
+      audio.addEventListener('canplay', () => {
+        console.log("Audio can play")
+      })
+      
+      audio.addEventListener('loadstart', () => {
+        console.log("Audio loading started")
+      })
+      
+      audio.addEventListener('loadeddata', () => {
+        console.log("Audio data loaded")
+      })
+      
+      audio.addEventListener('error', (e) => {
+        const errorDetails = {
+          error: audio.error,
+          code: audio.error?.code,
+          message: audio.error?.message,
+          src: audio.src,
+          networkState: audio.networkState,
+          readyState: audio.readyState
+        }
+        console.error("Audio error event:", errorDetails)
+        
+        let errorMessage = '播放失敗'
+        if (audio.error?.code === 1) errorMessage = '音檔載入中止'
+        else if (audio.error?.code === 2) errorMessage = '網路錯誤'
+        else if (audio.error?.code === 3) errorMessage = '音檔解碼失敗'
+        else if (audio.error?.code === 4) errorMessage = '音檔格式不支援'
+        
+        setIsPlaying(false)
+        setCurrentPlayingId(null)
+        alert(`${errorMessage}\n錯誤代碼: ${audio.error?.code}\nURL: ${audioUrl}`)
+      })
+      
+      audio.addEventListener('ended', () => {
+        console.log("Audio playback ended")
+        setIsPlaying(false)
+        setCurrentPlayingId(null)
+      })
+      
+      // Set source after adding event listeners
+      audio.src = urlWithCacheBuster
+      audioRef.current = audio
+      
+      // Preload the audio
+      audio.load()
+      
+      // Set playing state
+      setIsPlaying(true)
+      setCurrentPlayingId(messageId)
+      
+      // Attempt to play
+      const playPromise = audio.play()
+      
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Audio playback started successfully")
+          })
+          .catch((err) => {
+            console.error("Audio play failed:", err)
+            setIsPlaying(false)
+            setCurrentPlayingId(null)
+            alert(`無法播放音檔: ${err.message}\n請確認您已授權音檔播放權限`)
+          })
+      }
+    } catch (err) {
+      console.error("Error creating audio:", err)
       setIsPlaying(false)
       setCurrentPlayingId(null)
+      alert(`建立音檔播放器失敗: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
-
-    audio.onerror = () => {
-      setIsPlaying(false)
-      setCurrentPlayingId(null)
-      console.error("Audio playback error")
-    }
-
-    audio.play().catch((err) => {
-      console.error("Audio play failed:", err)
-      setIsPlaying(false)
-      setCurrentPlayingId(null)
-    })
   }
 
   const transcribeAudio = async (audioBlob: Blob) => {
@@ -383,10 +456,18 @@ export function PodcastInterface() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-6 py-10 flex flex-col h-screen">
-      <div className="text-center mb-10">
+    <div className="max-w-3xl mx-auto px-6 py-10 flex flex-col h-screen">
+      <div className="relative text-center mb-10">
         <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-balance">Podcast +</h1>
         <p className="text-lg md:text-xl text-muted-foreground mt-3">Speak or type to start a conversation</p>
+        <Button
+          variant="ghost"
+          size="lg"
+          className="absolute top-0 right-0"
+          title="Settings"
+        >
+          <Settings className="h-12 w-12" />
+        </Button>
       </div>
 
       {uploadedFiles.length > 0 && (
@@ -417,7 +498,7 @@ export function PodcastInterface() {
             key={message.id}
             className={cn(
               "p-5",
-              message.role === "user" ? "bg-primary text-primary-foreground ml-16" : "bg-muted mr-16",
+              message.role === "user" ? "bg-primary text-primary-foreground ml-16" : "bg-white mr-16",
             )}
           >
             <div className="flex items-start justify-between gap-3">
@@ -503,7 +584,7 @@ export function PodcastInterface() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your message..."
-          className="min-h-28 resize-none text-lg"
+          className="min-h-28 resize-none text-lg bg-white"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
