@@ -6,7 +6,10 @@ import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
-import { Mic, MicOff, Send, Upload, FileText, X, Loader2, Volume2, Square, Settings } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Mic, MicOff, Send, Upload, FileText, X, Loader2, Volume2, Square, Settings, Globe } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface Message {
@@ -34,6 +37,10 @@ export function PodcastInterface() {
   const [currentPlayingId, setCurrentPlayingId] = useState<string | null>(null)
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [isUploadingPdf, setIsUploadingPdf] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [podcastStyle, setPodcastStyle] = useState<"gentle" | "lively" | "meditation" | "british">("gentle")
+  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "professional">("medium")
+  const [isWebSearchOpen, setIsWebSearchOpen] = useState(false)
   const pdfInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -92,6 +99,7 @@ export function PodcastInterface() {
       const requestBody = {
         userInstruction: input.text,
         retrievedContext: uploadedFiles.map((f) => f.content).join("\n\n"),
+        difficulty: difficulty,
         model: "gpt-4o-mini",
         maxTokens: 1000,
       }
@@ -173,6 +181,7 @@ export function PodcastInterface() {
         body: JSON.stringify({
           dialogue: dialogue,
           audioId: audioId,
+          voiceType: podcastStyle,
         }),
       })
 
@@ -188,7 +197,7 @@ export function PodcastInterface() {
 
       console.log("Audio generated:", data.audio_url)
 
-      // Update message with audio URL (removed auto-play for mobile compatibility)
+      // Update message with audio URL and auto-play
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId
@@ -196,6 +205,9 @@ export function PodcastInterface() {
             : msg
         )
       )
+
+      // Auto-play the generated audio
+      playAudioUrl(data.audio_url, messageId)
 
     } catch (error) {
       console.error("Failed to generate audio:", error)
@@ -353,6 +365,11 @@ export function PodcastInterface() {
 
   const startRecording = async () => {
     try {
+      // Stop any playing audio before recording
+      if (audioRef.current && isPlaying) {
+        stopAudio()
+      }
+      
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mediaRecorder = new MediaRecorder(stream)
       mediaRecorderRef.current = mediaRecorder
@@ -399,16 +416,20 @@ export function PodcastInterface() {
 
     const file = files[0]
     
-    // Validate PDF
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      alert('Please upload a PDF file')
+    // Validate file type - support PDF and images
+    const fileName = file.name.toLowerCase()
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
+    const isValidFile = allowedExtensions.some(ext => fileName.endsWith(ext))
+    
+    if (!isValidFile) {
+      alert('Please upload a PDF or image file (JPG, PNG, GIF, WebP, BMP)')
       return
     }
 
     setIsUploadingPdf(true)
 
     try {
-      console.log('Uploading PDF:', file.name, 'Auto process:', autoProcess)
+      console.log('Uploading file:', file.name, 'Auto process:', autoProcess)
       
       const formData = new FormData()
       formData.append('file', file)
@@ -420,33 +441,33 @@ export function PodcastInterface() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to upload PDF')
+        throw new Error('Failed to upload file')
       }
 
       const data = await response.json()
 
       if (!data.success) {
-        throw new Error(data.error || 'Failed to upload PDF')
+        throw new Error(data.error || 'Failed to upload file')
       }
 
-      console.log('PDF upload response:', data)
+      console.log('File upload response:', data)
 
       // Show success message
       const message = data.auto_processed 
-        ? `PDF "${data.filename}" uploaded and processed successfully!` 
-        : `PDF "${data.filename}" uploaded successfully!`
+        ? `File "${data.filename}" uploaded and processed successfully!` 
+        : `File "${data.filename}" uploaded successfully!`
       
       alert(message)
 
       // Add to uploaded files list for display
       setUploadedFiles((prev) => [
         ...prev,
-        { name: data.filename, content: `[PDF: ${data.filename}]` }
+        { name: data.filename, content: `[File: ${data.filename}]` }
       ])
 
     } catch (error) {
-      console.error('PDF upload failed:', error)
-      alert(`Failed to upload PDF: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      console.error('File upload failed:', error)
+      alert(`Failed to upload file: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsUploadingPdf(false)
       if (pdfInputRef.current) {
@@ -465,6 +486,7 @@ export function PodcastInterface() {
           size="lg"
           className="absolute top-0 right-0"
           title="Settings"
+          onClick={() => setIsSettingsOpen(true)}
         >
           <Settings className="h-12 w-12" />
         </Button>
@@ -609,7 +631,7 @@ export function PodcastInterface() {
               type="file"
               ref={pdfInputRef}
               onChange={(e) => handlePdfUpload(e, true)}
-              accept=".pdf"
+              accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,image/*"
               className="hidden"
             />
             <Button 
@@ -627,6 +649,16 @@ export function PodcastInterface() {
               <span className="hidden sm:inline">{isUploadingPdf ? "Uploading..." : "Upload"}</span>
             </Button>
 
+            <Button 
+              variant="outline" 
+              size="lg" 
+              onClick={() => setIsWebSearchOpen(true)}
+              className="gap-2"
+            >
+              <Globe className="h-5 w-5" />
+              <span className="hidden sm:inline">Web Search</span>
+            </Button>
+
             {isRecording && <span className="text-base text-destructive animate-pulse font-medium">Recording...</span>}
             {isTranscribing && <span className="text-base text-primary animate-pulse font-medium">Transcribing...</span>}
           </div>
@@ -637,6 +669,62 @@ export function PodcastInterface() {
           </Button>
         </div>
       </div>
+
+      <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Podcast Settings</DialogTitle>
+            <DialogDescription>
+              Choose your preferred podcast style and content difficulty
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-6 py-4">
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Podcast Style</Label>
+              <RadioGroup value={podcastStyle} onValueChange={(value) => setPodcastStyle(value as typeof podcastStyle)}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="gentle" id="gentle" />
+                  <Label htmlFor="gentle" className="font-normal cursor-pointer">Gentle - Warm and friendly</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="lively" id="lively" />
+                  <Label htmlFor="lively" className="font-normal cursor-pointer">Lively - Energetic and dynamic</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="meditation" id="meditation" />
+                  <Label htmlFor="meditation" className="font-normal cursor-pointer">Meditation - Calm and relaxing</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="british" id="british" />
+                  <Label htmlFor="british" className="font-normal cursor-pointer">British - British accent style</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Content Difficulty</Label>
+              <RadioGroup value={difficulty} onValueChange={(value) => setDifficulty(value as typeof difficulty)}>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="easy" id="easy" />
+                  <Label htmlFor="easy" className="font-normal cursor-pointer">Easy - Simple and accessible</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="medium" id="medium" />
+                  <Label htmlFor="medium" className="font-normal cursor-pointer">Medium - Intermediate level</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="hard" id="hard" />
+                  <Label htmlFor="hard" className="font-normal cursor-pointer">Hard - Advanced</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="professional" id="professional" />
+                  <Label htmlFor="professional" className="font-normal cursor-pointer">Professional - Expert level</Label>
+                </div>
+              </RadioGroup>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -7,11 +7,12 @@ export async function POST(request: NextRequest) {
     
     console.log("Request body:", JSON.stringify(body, null, 2))
     
-    const { dialogue, audioId } = body
+    const { dialogue, audioId, voiceType } = body
     
     // Prepare request body for backend API
     const backendRequestBody = {
       dialogue: dialogue,
+      voice_type: voiceType || "gentle",
       audio_id: audioId,
     }
     

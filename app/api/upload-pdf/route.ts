@@ -17,10 +17,14 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    // Validate file type
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
+    // Validate file type - support PDF and images
+    const fileName = file.name.toLowerCase()
+    const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
+    const isValidFile = allowedExtensions.some(ext => fileName.endsWith(ext))
+    
+    if (!isValidFile) {
       return NextResponse.json(
-        { error: "Only PDF files are allowed", success: false },
+        { error: "Only PDF and image files (JPG, PNG, GIF, WebP, BMP) are allowed", success: false },
         { status: 400 }
       )
     }
