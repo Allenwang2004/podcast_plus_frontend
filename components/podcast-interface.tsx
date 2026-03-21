@@ -425,7 +425,7 @@ export function PodcastInterface() {
       const userMessage: Message = {
         id: Date.now().toString(),
         role: "user",
-        content: `🌐 ${text}`,
+        content: `${text}`,
       }
       setMessages((prev) => [...prev, userMessage])
       
