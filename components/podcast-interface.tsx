@@ -143,9 +143,14 @@ export function PodcastInterface() {
         audioData: null,
         audioUrl: null,
         audioId: data.audio_id,
-        isGeneratingAudio: false,
+        isGeneratingAudio: true, // Start with generating state
       }
       setMessages((prev) => [...prev, assistantMessage])
+
+      // Automatically generate audio after dialogue is created
+      if (data.audio_id) {
+        generateAudio(assistantMessage.id, data.dialogue, data.audio_id)
+      }
 
     } catch (error) {
       console.error("Request failed:", error)
@@ -661,27 +666,15 @@ export function PodcastInterface() {
               </div>
               {message.role === "assistant" && (
                 <div className="flex gap-2 shrink-0">
-                  {/* Generate Audio Button */}
-                  {message.audioId && !message.audioUrl && !message.isGeneratingAudio && (
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={() => generateAudio(message.id, message.content, message.audioId!)}
-                      title="Generate audio"
-                    >
-                      <Volume2 className="h-5 w-5" />
-                    </Button>
-                  )}
-                  
                   {/* Generating Audio Spinner */}
                   {message.isGeneratingAudio && (
-                    <Button variant="outline" size="icon" disabled>
+                    <Button variant="outline" size="icon" disabled title="Generating audio...">
                       <Loader2 className="h-5 w-5 animate-spin" />
                     </Button>
                   )}
                   
-                  {/* Play/Stop Audio Button */}
-                  {message.audioUrl && (
+                  {/* Play/Stop Audio Button - only show when audio is ready */}
+                  {message.audioUrl && !message.isGeneratingAudio && (
                     <Button
                       variant="ghost"
                       size="icon"
