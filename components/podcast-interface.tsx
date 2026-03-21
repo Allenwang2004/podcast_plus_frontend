@@ -488,9 +488,14 @@ export function PodcastInterface() {
             audioData: null,
             audioUrl: null,
             audioId: data.audio_id,
-            isGeneratingAudio: false,
+            isGeneratingAudio: true, // Start with generating state
           }
           setMessages((prev) => [...prev, assistantMessage])
+
+          // Automatically generate audio after dialogue is created
+          if (data.audio_id) {
+            generateAudio(assistantMessage.id, data.dialogue, data.audio_id)
+          }
 
         } catch (error) {
           console.error("Request failed:", error)
