@@ -420,6 +420,15 @@ export function PodcastInterface() {
     // If in web search mode, perform search first then generate dialogue
     if (isWebSearchMode) {
       setIsWebSearchMode(false) // Exit web search mode
+      
+      // Add user message first
+      const userMessage: Message = {
+        id: Date.now().toString(),
+        role: "user",
+        content: `🌐 ${text}`,
+      }
+      setMessages((prev) => [...prev, userMessage])
+      
       setIsWebSearching(true)
 
       try {
@@ -445,14 +454,80 @@ export function PodcastInterface() {
 
         setIsWebSearching(false)
         
-        // Now send to backend with web search context
-        await sendToBackend({ type: "text", text }, webSearchContext)
+        // Now send to backend with web search context (don't add user message again)
+        setIsLoading(true)
+
+        try {
+          // Prepare request body
+          const requestBody: any = {
+            userInstruction: text,
+            retrievedContext: uploadedFiles.map((f) => f.content).join("\n\n"),
+            difficulty: difficulty,
+            model: "gpt-4o-mini",
+            maxTokens: 1000,
+          }
+
+          // Add web search context if provided
+          if (webSearchContext) {
+            requestBody.webSearchContext = webSearchContext
+          }
+
+          const response = await fetch("/api/podcast", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          })
+
+          if (!response.ok) {
+            throw new Error("API request failed")
+          }
+
+          const data = await response.json()
+
+          // Check if request was successful
+          if (!data.success) {
+            throw new Error(data.message || "Failed to generate dialogue")
+          }
+
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: data.dialogue,
+            audioData: null,
+            audioUrl: null,
+            audioId: data.audio_id,
+            isGeneratingAudio: false,
+          }
+          setMessages((prev) => [...prev, assistantMessage])
+
+        } catch (error) {
+          console.error("Request failed:", error)
+          // Show error message to user
+          const errorMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: `Error: ${error instanceof Error ? error.message : "Failed to generate response"}`,
+            audioData: null,
+          }
+          setMessages((prev) => [...prev, errorMessage])
+        } finally {
+          setIsLoading(false)
+        }
 
       } catch (error) {
         console.error("Web search failed:", error)
         setIsWebSearching(false)
-        // Still generate dialogue without search context on error
-        await sendToBackend({ type: "text", text })
+        
+        // Show web search error message
+        const errorMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: `Web search error: ${error instanceof Error ? error.message : "Failed to search"}`,
+          audioData: null,
+        }
+        setMessages((prev) => [...prev, errorMessage])
       }
     } else {
       // Normal mode without web search
