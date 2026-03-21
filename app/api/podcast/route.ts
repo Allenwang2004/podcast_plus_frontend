@@ -8,14 +8,19 @@ export async function POST(request: NextRequest) {
     console.log("Request body:", JSON.stringify(body, null, 2))
     
     // Extract data
-    const { userInstruction, model, maxTokens, difficulty } = body
+    const { userInstruction, model, maxTokens, difficulty, webSearchContext } = body
     
     // Prepare request body for backend API
-    const backendRequestBody = {
+    const backendRequestBody: any = {
       user_instruction: userInstruction,
       difficulty: difficulty || "medium",
       model: model || "gpt-4o-mini",
       max_tokens: maxTokens || 1000,
+    }
+
+    // Add optional web_search_context if provided
+    if (webSearchContext) {
+      backendRequestBody.web_search_context = webSearchContext
     }
     
     console.log("Sending to backend:", JSON.stringify(backendRequestBody, null, 2))

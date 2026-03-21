@@ -27,6 +27,13 @@ interface UploadedFile {
   content: string
 }
 
+interface SearchResultItem {
+  title: string
+  url: string
+  content: string
+  score: number
+}
+
 export function PodcastInterface() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -40,7 +47,8 @@ export function PodcastInterface() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false)
   const [podcastStyle, setPodcastStyle] = useState<"gentle" | "lively" | "meditation" | "british">("gentle")
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "professional">("medium")
-  const [isWebSearchOpen, setIsWebSearchOpen] = useState(false)
+  const [isWebSearching, setIsWebSearching] = useState(false)
+  const [isWebSearchMode, setIsWebSearchMode] = useState(false)
   const pdfInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -77,7 +85,7 @@ export function PodcastInterface() {
     })
   }
 
-  const sendToBackend = async (input: { type: "text"; text: string } | { type: "audio"; audioBlob: Blob }) => {
+  const sendToBackend = async (input: { type: "text"; text: string } | { type: "audio"; audioBlob: Blob }, webSearchContext?: string) => {
     setIsLoading(true)
 
     try {
@@ -96,12 +104,17 @@ export function PodcastInterface() {
       setMessages((prev) => [...prev, userMessage])
 
       // Prepare request body
-      const requestBody = {
+      const requestBody: any = {
         userInstruction: input.text,
         retrievedContext: uploadedFiles.map((f) => f.content).join("\n\n"),
         difficulty: difficulty,
         model: "gpt-4o-mini",
         maxTokens: 1000,
+      }
+
+      // Add web search context if provided
+      if (webSearchContext) {
+        requestBody.webSearchContext = webSearchContext
       }
 
       const response = await fetch("/api/podcast", {
@@ -403,7 +416,48 @@ export function PodcastInterface() {
     if (!input.trim() || isLoading) return
     const text = input
     setInput("")
-    await sendToBackend({ type: "text", text })
+
+    // If in web search mode, perform search first then generate dialogue
+    if (isWebSearchMode) {
+      setIsWebSearchMode(false) // Exit web search mode
+      setIsWebSearching(true)
+
+      try {
+        const response = await fetch("/api/web-search", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: text,
+            max_results: 3,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || "Web search failed")
+        }
+
+        // Use formatted_context from backend
+        const webSearchContext = data.formatted_context || ""
+
+        setIsWebSearching(false)
+        
+        // Now send to backend with web search context
+        await sendToBackend({ type: "text", text }, webSearchContext)
+
+      } catch (error) {
+        console.error("Web search failed:", error)
+        setIsWebSearching(false)
+        // Still generate dialogue without search context on error
+        await sendToBackend({ type: "text", text })
+      }
+    } else {
+      // Normal mode without web search
+      await sendToBackend({ type: "text", text })
+    }
   }
 
   const removeFile = (fileName: string) => {
@@ -599,13 +653,22 @@ export function PodcastInterface() {
             </div>
           </Card>
         )}
+        {isWebSearching && (
+          <Card className="p-5 bg-muted mr-16">
+            <p className="text-sm font-semibold mb-2 uppercase tracking-wide opacity-70">Web Search</p>
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-lg">Searching web...</span>
+            </div>
+          </Card>
+        )}
       </div>
 
       <div className="space-y-4">
         <Textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
+          placeholder={isWebSearchMode ? "Enter search query (will search then generate podcast)..." : "Type your message..."}
           className="min-h-28 resize-none text-lg bg-white"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
@@ -650,13 +713,14 @@ export function PodcastInterface() {
             </Button>
 
             <Button 
-              variant="outline" 
+              variant={isWebSearchMode ? "default" : "outline"}
               size="lg" 
-              onClick={() => setIsWebSearchOpen(true)}
+              onClick={() => setIsWebSearchMode(!isWebSearchMode)}
+              disabled={isWebSearching || isLoading}
               className="gap-2"
             >
               <Globe className="h-5 w-5" />
-              <span className="hidden sm:inline">Web Search</span>
+              <span className="hidden sm:inline">{isWebSearchMode ? "Web Mode" : "Web Search"}</span>
             </Button>
 
             {isRecording && <span className="text-base text-destructive animate-pulse font-medium">Recording...</span>}
