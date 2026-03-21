@@ -215,7 +215,7 @@ export function PodcastInterface() {
 
       console.log("Audio generated:", data.audio_url)
 
-      // Update message with audio URL and auto-play
+      // Update message with audio URL (no auto-play)
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === messageId
@@ -223,9 +223,6 @@ export function PodcastInterface() {
             : msg
         )
       )
-
-      // Auto-play the generated audio
-      playAudioUrl(data.audio_url, messageId)
 
     } catch (error) {
       console.error("Failed to generate audio:", error)
@@ -250,16 +247,7 @@ export function PodcastInterface() {
     try {
       const audio = new Audio()
       
-      // Add cache buster to prevent 304 errors
-      const cacheBuster = `t=${Date.now()}`
-      const urlWithCacheBuster = audioUrl.includes('?') 
-        ? `${audioUrl}&${cacheBuster}` 
-        : `${audioUrl}?${cacheBuster}`
-      
-      console.log("Audio URL with cache buster:", urlWithCacheBuster)
-      
-      // Set CORS mode for cross-origin audio
-      audio.crossOrigin = "anonymous"
+      console.log("Audio URL:", audioUrl)
       
       // Add load event listener
       audio.addEventListener('loadedmetadata', () => {
@@ -307,11 +295,8 @@ export function PodcastInterface() {
       })
       
       // Set source after adding event listeners
-      audio.src = urlWithCacheBuster
+      audio.src = audioUrl
       audioRef.current = audio
-      
-      // Preload the audio
-      audio.load()
       
       // Set playing state
       setIsPlaying(true)
