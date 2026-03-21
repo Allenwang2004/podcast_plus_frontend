@@ -409,7 +409,7 @@ export function PodcastInterface() {
 
     // If in web search mode, perform search first then generate dialogue
     if (isWebSearchMode) {
-      setIsWebSearchMode(false) // Exit web search mode
+      // Keep web search mode active (don't exit)
       
       // Add user message first
       const userMessage: Message = {
