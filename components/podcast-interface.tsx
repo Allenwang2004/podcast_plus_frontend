@@ -49,6 +49,8 @@ export function PodcastInterface() {
   const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard" | "professional">("medium")
   const [isWebSearching, setIsWebSearching] = useState(false)
   const [isWebSearchMode, setIsWebSearchMode] = useState(false)
+  const [lastAudioId, setLastAudioId] = useState<string | null>(null)
+  const [lastWebSearchQuery, setLastWebSearchQuery] = useState<string | null>(null)
   const pdfInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -117,6 +119,11 @@ export function PodcastInterface() {
         requestBody.webSearchContext = webSearchContext
       }
 
+      // Add previous audio ID for continuity
+      if (lastAudioId) {
+        requestBody.previousAudioId = lastAudioId
+      }
+
       const response = await fetch("/api/podcast", {
         method: "POST",
         headers: {
@@ -146,6 +153,11 @@ export function PodcastInterface() {
         isGeneratingAudio: true, // Start with generating state
       }
       setMessages((prev) => [...prev, assistantMessage])
+
+      // Update last audio ID for continuity
+      if (data.audio_id) {
+        setLastAudioId(data.audio_id)
+      }
 
       // Automatically generate audio after dialogue is created
       if (data.audio_id) {
@@ -422,13 +434,34 @@ export function PodcastInterface() {
       setIsWebSearching(true)
 
       try {
+        // Merge queries if there's a previous query
+        let searchQuery = text
+        if (lastWebSearchQuery) {
+          const mergeResponse = await fetch("/api/merge-queries", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              previous_query: lastWebSearchQuery,
+              current_query: text,
+            }),
+          })
+
+          const mergeData = await mergeResponse.json()
+          if (mergeResponse.ok && mergeData.success && mergeData.merged_query) {
+            searchQuery = mergeData.merged_query
+            console.log("Merged query:", searchQuery)
+          }
+        }
+
         const response = await fetch("/api/web-search", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            query: text,
+            query: searchQuery,
             max_results: 3,
           }),
         })
@@ -438,6 +471,9 @@ export function PodcastInterface() {
         if (!response.ok || !data.success) {
           throw new Error(data.message || "Web search failed")
         }
+
+        // Update last web search query for next search
+        setLastWebSearchQuery(text)
 
         // Use formatted_context from backend
         const webSearchContext = data.formatted_context || ""
@@ -460,6 +496,11 @@ export function PodcastInterface() {
           // Add web search context if provided
           if (webSearchContext) {
             requestBody.webSearchContext = webSearchContext
+          }
+
+          // Add previous audio ID for continuity
+          if (lastAudioId) {
+            requestBody.previousAudioId = lastAudioId
           }
 
           const response = await fetch("/api/podcast", {
@@ -491,6 +532,11 @@ export function PodcastInterface() {
             isGeneratingAudio: true, // Start with generating state
           }
           setMessages((prev) => [...prev, assistantMessage])
+
+          // Update last audio ID for continuity
+          if (data.audio_id) {
+            setLastAudioId(data.audio_id)
+          }
 
           // Automatically generate audio after dialogue is created
           if (data.audio_id) {

@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     console.log("Request body:", JSON.stringify(body, null, 2))
     
     // Extract data
-    const { userInstruction, model, maxTokens, difficulty, webSearchContext } = body
+    const { userInstruction, model, maxTokens, difficulty, webSearchContext, previousAudioId } = body
     
     // Prepare request body for backend API
     const backendRequestBody: any = {
@@ -21,6 +21,11 @@ export async function POST(request: NextRequest) {
     // Add optional web_search_context if provided
     if (webSearchContext) {
       backendRequestBody.web_search_context = webSearchContext
+    }
+
+    // Add optional previous_audio_id if provided
+    if (previousAudioId) {
+      backendRequestBody.previous_audio_id = previousAudioId
     }
     
     console.log("Sending to backend:", JSON.stringify(backendRequestBody, null, 2))
